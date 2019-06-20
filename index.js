@@ -8,19 +8,20 @@ function walker (dirs, opts) {
   var filter = opts && opts.filter || function (filename) { return true }
   if (!Array.isArray(dirs)) dirs = [dirs]
   var maxDepth = opts && opts.maxDepth || Infinity
+  var sep = Buffer.from(path.sep)
 
   dirs = dirs.filter(filter)
 
   var pending = []
   var root = dirs.shift()
-  if (root) pending.push(root)
+  if (root) pending.push(Buffer.from(root))
 
   return from.obj(read)
 
   function read (size, cb) {
     if (!pending.length) {
       if (dirs.length) {
-        root = dirs.shift()
+        root = Buffer.from(dirs.shift())
         pending.push(root)
         return read(size, cb)
       }
@@ -36,14 +37,14 @@ function walker (dirs, opts) {
       if (err) return done(err)
       if (!st.isDirectory() || depthLimiter(name, root, maxDepth)) return done(null)
 
-      fs.readdir(name, function (err, files) {
+      fs.readdir(name, { encoding: 'buffer' }, function (err, files) {
         if (err) return done(err)
         files.sort()
         for (var i = 0; i < files.length; i++) {
-          var next = path.join(name, files[i])
+          var next = Buffer.concat([name, sep, files[i]], name.length + 1 + files[i].length)
           if (filter(next)) pending.unshift(next)
         }
-        if (name === root) kick(cb)
+        if (name.toString() === root) kick(cb)
         else done(null)
       })
 
@@ -51,10 +52,12 @@ function walker (dirs, opts) {
         if (err) return cb(err)
         var item = {
           root: root,
-          filepath: name,
+          filepath: name.toString(),
           stat: st,
-          relname: root === name ? path.basename(name) : path.relative(root, name),
-          basename: path.basename(name)
+          relname: root === name
+            ? path.basename(name.toString())
+            : path.relative(root.toString(), name.toString()),
+          basename: path.basename(name.toString())
         }
         var isFile = st.isFile()
         if (isFile) {
@@ -70,7 +73,7 @@ function walker (dirs, opts) {
 
 function depthLimiter (filePath, relativeTo, maxDepth) {
   if (maxDepth === Infinity) return false
-  const rootDepth = relativeTo.split(path.sep).length
-  const fileDepth = filePath.split(path.sep).length
+  const rootDepth = relativeTo.toString().split(path.sep).length
+  const fileDepth = filePath.toString().split(path.sep).length
   return fileDepth - rootDepth > maxDepth
 }
